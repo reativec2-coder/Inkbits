@@ -1,0 +1,669 @@
+<!doctype html><html lang="en"><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style><title>Inkbits</title>
+<meta name="description" content="A tap-flip puzzle. Clear every 1 before you run out of taps.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#dcdad6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14161c" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Inkbits">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+</head><body>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Permanent+Marker&family=Bungee&display=swap">
+<style>
+/* Layout: one centered sheet of "paper" holding a 4x12 grid of bits, a tap budget and timer above, controls below. */
+:root {
+  --paper: #dcdad6;
+  --sheet: #e8e6e2;
+  --ink: #1c2a96;
+  --ink-dim: #7b7f9e;
+  --text: #25262c;
+  --muted: #62646e;
+  --line: #bfbcb6;
+  --hint: #c2410c;
+  --win: #14703f;
+  --lose: #b42318;
+  --star: #d98e04;
+  --font-ui: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-digit: 'Bungee', 'Impact', system-ui, sans-serif;
+  --font-ink: 'Permanent Marker', 'Segoe Print', 'Bradley Hand', cursive;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #14161c; --sheet: #1c1f27; --ink: #93a5ff; --ink-dim: #6d77a3;
+    --text: #e6e7ee; --muted: #9a9cab; --line: #2e3240; --hint: #ff9a62; --win: #5fd69a;
+    --lose: #ff8a80; --star: #ffc443;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #14161c; --sheet: #1c1f27; --ink: #93a5ff; --ink-dim: #6d77a3;
+  --text: #e6e7ee; --muted: #9a9cab; --line: #2e3240; --hint: #ff9a62; --win: #5fd69a;
+  --lose: #ff8a80; --star: #ffc443;
+  color-scheme: dark;
+}
+body {
+  background: var(--paper); color: var(--text); font-family: var(--font-ui);
+  padding-block: 8px 8px;
+  padding-left: max(8px, env(safe-area-inset-left, 0px));
+  padding-right: max(8px, env(safe-area-inset-right, 0px));
+}
+main { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; min-height: calc(100dvh - 16px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); }
+header { display: flex; align-items: baseline; gap: 10px; }
+header h1 { font-family: var(--font-ink); font-weight: 400; font-size: 1.6rem; line-height: 1.1; margin: 0; color: var(--ink); letter-spacing: .02em; }
+.by { margin: 0; font-size: .75rem; color: var(--muted); letter-spacing: .04em; }
+header p { display: none; }
+
+.hud { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.stat { background: var(--sheet); border: 1px solid var(--line); border-radius: 8px; padding: 6px 4px; text-align: center; min-width: 0; }
+.stat span { display: block; font-size: .66rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.stat b { display: block; font-size: 1.05rem; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.stat.low b { color: var(--lose); }
+.budget { height: 5px; flex: none; background: var(--line); border-radius: 3px; overflow: hidden; }
+.budget i { display: block; height: 100%; width: 100%; background: var(--ink); transition: width .2s, background-color .2s; transform-origin: left; }
+.budget.low i { background: var(--lose); }
+
+.sheet { background: var(--sheet); border: 1px solid var(--line); border-radius: 8px; padding: 4px; flex: 1 1 auto; display: flex; min-height: 380px; }
+.board { flex: 1; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-template-rows: repeat(10, minmax(0, 1fr)); gap: 2px; container-type: size; }
+.cell {
+  appearance: none; border: 0; background: transparent; cursor: pointer;
+  font-family: var(--font-digit); font-weight: 400; font-size: var(--fs, min(6cqw, 17cqh)); line-height: 1;
+  padding: 0; min-width: 0; min-height: 0; border-radius: 4px; color: var(--ink-dim);
+  display: grid; place-items: center; -webkit-tap-highlight-color: transparent;
+  transition: color .15s, background-color .15s;
+}
+.cell.on { color: var(--ink); }
+.cell i { font-style: normal; display: block; transform: scale(var(--sx, 1), 1); line-height: .8; }
+.cell:hover { background: color-mix(in srgb, var(--ink) 10%, transparent); }
+.cell:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.cell.hint { outline: 2px dashed var(--hint); outline-offset: -2px; background: color-mix(in srgb, var(--hint) 14%, transparent); }
+.cell.pop { animation: pop .22s ease-out; }
+.cell.wave { animation: wave .6s ease-out both; animation-delay: var(--d, 0ms); }
+.board.lost .cell { opacity: .5; cursor: default; }
+@keyframes pop { 40% { transform: scale(1.25) rotate(-4deg); } }
+@keyframes wave { 0% { transform: scale(1); } 40% { transform: scale(1.5) translateY(-6px); color: var(--win); } 100% { transform: scale(1); } }
+
+.controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+button.btn {
+  font: 600 .85rem var(--font-ui); padding: 8px 4px; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 8px; cursor: pointer;
+  background: var(--sheet); color: var(--text); border: 1px solid var(--line); min-height: 44px;
+}
+button.btn:hover:not(:disabled) { border-color: var(--ink); }
+button.btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+button.btn:disabled { opacity: .45; cursor: default; }
+button.btn.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.msg { min-height: 2.6em; font-size: .85rem; line-height: 1.3; color: var(--muted); }
+.msg.win { color: var(--win); font-weight: 600; }
+.msg.lose { color: var(--lose); font-weight: 600; }
+.stars { color: var(--star); letter-spacing: .1em; }
+.legend { color: var(--muted); font-size: .8rem; line-height: 1.4; border-top: 1px solid var(--line); padding-top: 6px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.brow { display: contents; }
+.cell { touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+.cell.on { background: color-mix(in srgb, var(--ink) 9%, transparent); }
+#installbtn { flex: none; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+@media (prefers-contrast: more) {
+  :root:not([data-theme="dark"]) { --ink-dim: #4b4f6b; --muted: #3a3c45; --line: #6f6c66; }
+}
+@media (prefers-contrast: more) and (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ink-dim: #a3adda; --muted: #c4c6d4; --line: #6a708a; }
+}
+.legend summary { cursor: pointer; }
+.legend b { color: var(--text); font-weight: 600; }
+.tut {
+  position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; overflow-y: auto;
+  background: color-mix(in srgb, var(--paper) 90%, transparent);
+  padding: calc(16px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+.tut[hidden] { display: none; }
+.tut-card { background: var(--sheet); border: 1px solid var(--line); border-radius: 12px; padding: 20px; max-width: 440px; width: 100%; display: flex; flex-direction: column; gap: 14px; }
+.tut-card h2 { margin: 0; font-family: var(--font-ink); font-weight: 400; font-size: 1.6rem; color: var(--ink); }
+.tut-card ol { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 8px; font-size: .95rem; line-height: 1.45; }
+.demo { display: flex; align-items: center; justify-content: center; gap: 14px; }
+.demo figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.demo figcaption { font-size: .75rem; color: var(--muted); }
+.demo .arrow { color: var(--muted); font-size: 1.4rem; }
+.mini { display: grid; grid-template-columns: repeat(3, 34px); gap: 2px; padding: 6px; background: var(--paper); border-radius: 6px; }
+.mini span { height: 38px; display: grid; place-items: center; font-family: var(--font-digit); font-size: 1.3rem; color: var(--ink-dim); border-radius: 4px; }
+.mini span.on { color: var(--ink); }
+.mini span.tapped { outline: 2px dashed var(--hint); outline-offset: -2px; }
+.playerbar { display: flex; gap: 6px; align-items: center; }
+.chip { font: 600 .8rem var(--font-ui); min-height: 36px; padding: 4px 12px; border-radius: 999px; background: var(--sheet); color: var(--text); border: 1px solid var(--line); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.chip:hover { border-color: var(--ink); }
+.chip:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.chip b { color: var(--ink); font-weight: 600; }
+#namebtn { flex: 1 1 auto; text-align: left; }
+#rankbtn { flex: none; }
+.name-input { font: 600 1rem var(--font-ui); padding: 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--paper); color: var(--text); width: 100%; box-sizing: border-box; min-height: 44px; }
+.name-input:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.tut-card p.note { margin: 0; font-size: .95rem; line-height: 1.45; }
+.rank-card ol { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.rank-card li { display: grid; grid-template-columns: 2.4em minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 7px 8px; border-radius: 6px; font-size: .9rem; }
+.rank-card li .n { color: var(--muted); font-variant-numeric: tabular-nums; }
+.rank-card li .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-card li .lv { font-weight: 600; font-variant-numeric: tabular-nums; }
+.rank-card li .st { color: var(--star); font-variant-numeric: tabular-nums; min-width: 3.2em; text-align: right; }
+.rank-card li.me { background: color-mix(in srgb, var(--ink) 14%, transparent); outline: 1px solid var(--ink); }
+.rank-card li.me .nm { font-weight: 600; }
+.rank-card .msg { min-height: 0; }
+@media (prefers-reduced-motion: reduce) { .cell.pop, .cell.wave { animation: none; } .cell, .budget i { transition: none; } }
+</style>
+
+<main>
+  <header>
+    <h1>Inkbits</h1>
+    <div class="by">by Tharun</div>
+    <p>Tap a digit and it flips along with the four digits touching it. Clear every 1 before you run out of taps.</p>
+  </header>
+
+  <div class="playerbar">
+    <button class="chip" id="namebtn" type="button" aria-label="Change your name">Player: <b id="pname">Set name</b> ✎</button>
+    <button class="chip" id="installbtn" type="button" hidden>⬇ Install</button>
+    <button class="chip" id="rankbtn" type="button" aria-label="Open world ranking">🏆 Rank <b id="prank">–</b></button>
+  </div>
+
+  <div class="hud">
+    <div class="stat"><span>Level</span><b id="level">1</b></div>
+    <div class="stat" id="tapstat"><span>Taps left</span><b id="left">–</b></div>
+    <div class="stat"><span>Time</span><b id="time">0:00</b></div>
+    <div class="stat"><span>Ones left</span><b id="ones">–</b></div>
+    <div class="stat"><span>Stars</span><b id="stars">0</b></div>
+  </div>
+  <div class="budget" id="budget" aria-hidden="true"><i id="budgetfill"></i></div>
+
+  <div class="sheet"><div class="board" id="board" role="grid" aria-label="Puzzle grid, 10 rows by 12 columns. Use arrow keys to move and Enter or Space to flip."></div></div>
+
+  <div class="msg" id="msg" role="status" aria-live="polite" aria-atomic="true"></div>
+
+  <div class="controls">
+    <button class="btn" id="undo" type="button">Undo</button>
+    <button class="btn" id="hint" type="button">Hint</button>
+    <button class="btn" id="reset" type="button">Restart</button>
+    <button class="btn" id="howto" type="button">How to play</button>
+    <button class="btn" id="sound" type="button">Sound on</button>
+    <button class="btn primary" id="next" type="button">New grid</button>
+  </div>
+
+  <details class="legend"><summary>Scoring rules</summary>
+    You get a limited number of taps: the minimum needed plus a small cushion that shrinks as levels rise.
+    Finish at the minimum for <b>3 stars</b>, within 2 extra taps for <b>2</b>, otherwise <b>1</b>.
+    Hints show the best next tap but count as normal taps.
+  </details>
+<div class="tut" id="tut" role="dialog" aria-modal="true" aria-labelledby="tuttitle" hidden>
+    <div class="tut-card">
+      <h2 id="tuttitle">How to play</h2>
+      <div class="demo" aria-hidden="true">
+        <figure>
+          <div class="mini"><span>0</span><span class="on">1</span><span>0</span><span class="on">1</span><span class="on tapped">1</span><span class="on">1</span><span>0</span><span class="on">1</span><span>0</span></div>
+          <figcaption>Tap the middle 1</figcaption>
+        </figure>
+        <div class="arrow">→</div>
+        <figure>
+          <div class="mini"><span>0</span><span>0</span><span>0</span><span>0</span><span>0</span><span>0</span><span>0</span><span>0</span><span>0</span></div>
+          <figcaption>All zeros. Cleared.</figcaption>
+        </figure>
+      </div>
+      <ol>
+        <li><b>Goal:</b> turn every 1 on the board into a 0.</li>
+        <li><b>Tap a digit:</b> it flips, and so do the digits directly above, below, left and right of it. A 1 becomes 0 and a 0 becomes 1.</li>
+        <li><b>Watch your taps:</b> you only get a limited number. Fewer taps earn more stars.</li>
+        <li><b>Stuck?</b> Hint points to a good next tap, and Undo takes a tap back.</li>
+      </ol>
+      <button class="btn primary" id="tutclose" type="button">Got it, let me play</button>
+    </div>
+  </div>
+
+  <div class="tut" id="namebox" role="dialog" aria-modal="true" aria-labelledby="nametitle" hidden>
+    <div class="tut-card">
+      <h2 id="nametitle">Your name</h2>
+      <p class="note">Pick a name for the world ranking. You’ll show up on the board automatically as you clear levels.</p>
+      <input class="name-input" id="nameinput" maxlength="14" autocomplete="nickname" placeholder="Enter your name" aria-label="Your name">
+      <button class="btn primary" id="namesave" type="button">Save name</button>
+      <button class="btn" id="nameskip" type="button">Play as guest</button>
+    </div>
+  </div>
+
+  <div class="tut" id="rank" role="dialog" aria-modal="true" aria-labelledby="ranktitle" hidden>
+    <div class="tut-card rank-card">
+      <h2 id="ranktitle">World ranking</h2>
+      <div class="msg" id="rankmsg"></div>
+      <ol id="ranklist"></ol>
+      <button class="btn" id="rankname" type="button">Change my name</button>
+      <button class="btn primary" id="rankclose" type="button">Close</button>
+    </div>
+  </div>
+</main>
+
+<script></script>
+<script>
+(function () {
+  var R = 10, C = 12, N = R * C;
+  var grid = [], start = [], history = [], hintIdx = -1, par = 0, budget = 0;
+  var won = false, level = 1, totalStars = 0, soundOn = true;
+  var name = '', bestLevel = 0, rows = [], uid = null, rankState = 'loading';
+  var t0 = null, finalMs = 0;
+  var boardEl = document.getElementById('board'), cells = [];
+  var $ = function (id) { return document.getElementById(id); };
+
+  function neighbors(i) {
+    var r = Math.floor(i / C), c = i % C, out = [i];
+    if (r > 0) out.push(i - C);
+    if (r < R - 1) out.push(i + C);
+    if (c > 0) out.push(i - 1);
+    if (c < C - 1) out.push(i + 1);
+    return out;
+  }
+
+  function solve(state) {
+    var m = [], i, j, k;
+    for (i = 0; i < N; i++) { m.push(new Uint8Array(N + 1)); m[i][N] = state[i]; }
+    for (j = 0; j < N; j++) neighbors(j).forEach(function (i2) { m[i2][j] = 1; });
+    var row = 0, where = new Array(N).fill(-1);
+    for (var col = 0; col < N && row < N; col++) {
+      var p = -1;
+      for (i = row; i < N; i++) if (m[i][col]) { p = i; break; }
+      if (p < 0) continue;
+      var t = m[p]; m[p] = m[row]; m[row] = t;
+      where[col] = row;
+      for (i = 0; i < N; i++) if (i !== row && m[i][col]) for (k = col; k <= N; k++) m[i][k] ^= m[row][k];
+      row++;
+    }
+    for (i = row; i < N; i++) if (m[i][N]) return null;
+    var x = new Array(N).fill(0);
+    for (j = 0; j < N; j++) if (where[j] >= 0) x[j] = m[where[j]][N];
+    return x;
+  }
+  function count(a) { return a.reduce(function (s, v) { return s + v; }, 0); }
+  function slack() { return Math.max(1, 6 - Math.floor(level / 2)); }
+  function isLost() { return !won && history.length >= budget && count(grid) > 0; }
+
+  function makeGrid(lvl) {
+    var taps = Math.min(5 + lvl * 2, 32), g, tries = 0;
+    do {
+      g = new Array(N).fill(0);
+      var pool = []; for (var i = 0; i < N; i++) pool.push(i);
+      for (var t = 0; t < taps; t++) {
+        var pick = Math.floor(Math.random() * pool.length);
+        neighbors(pool.splice(pick, 1)[0]).forEach(function (k) { g[k] ^= 1; });
+      }
+      tries++;
+    } while (count(g) < 6 && tries < 30);
+    return g;
+  }
+
+  /* Sound: tiny synthesized blips, started only after a tap. */
+  var ac = null;
+  function beep(freq, dur, type, when) {
+    if (!soundOn) return;
+    try {
+      ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+      var o = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime + (when || 0);
+      o.type = type || 'triangle'; o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.12, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + dur + 0.02);
+    } catch (e) {}
+  }
+  function buzz(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} }
+
+  function build() {
+    var rowEl;
+    for (var i = 0; i < N; i++) {
+      if (i % C === 0) { rowEl = document.createElement('div'); rowEl.className = 'brow'; rowEl.setAttribute('role', 'row'); boardEl.appendChild(rowEl); }
+      var b = document.createElement('button');
+      b.tabIndex = i === 0 ? 0 : -1;
+      b.type = 'button'; b.className = 'cell'; b.id = 'c' + i;
+      b.setAttribute('role', 'gridcell');
+      (function (idx) { b.addEventListener('click', function () { tap(idx, true); }); })(i);
+      b.appendChild(document.createElement('i'));
+      rowEl.appendChild(b); cells.push(b);
+    }
+  }
+
+  /* Keyboard: one tab stop on the board, arrow keys move between cells. */
+  var focusIdx = 0;
+  function setFocus(i, move) { cells[focusIdx].tabIndex = -1; focusIdx = i; cells[i].tabIndex = 0; if (move) cells[i].focus({ preventScroll: true }); }
+  boardEl.addEventListener('focusin', function (e) { var i = cells.indexOf(e.target); if (i >= 0 && i !== focusIdx) setFocus(i, false); });
+  boardEl.addEventListener('keydown', function (e) {
+    var i = cells.indexOf(e.target); if (i < 0) return;
+    var r = Math.floor(i / C), c = i % C, n = i;
+    switch (e.key) {
+      case 'ArrowLeft': if (c > 0) n = i - 1; break;
+      case 'ArrowRight': if (c < C - 1) n = i + 1; break;
+      case 'ArrowUp': if (r > 0) n = i - C; break;
+      case 'ArrowDown': if (r < R - 1) n = i + C; break;
+      case 'Home': n = e.ctrlKey ? 0 : r * C; break;
+      case 'End': n = e.ctrlKey ? N - 1 : r * C + C - 1; break;
+      default: return;
+    }
+    e.preventDefault(); setFocus(n, true);
+  });
+
+  /* Size digits to fill each cell: tall as the cell allows, squeezed sideways to fit its width. */
+  function fitDigits() {
+    var w = cells[0].clientWidth, h = cells[0].clientHeight;
+    if (!w || !h) return;
+    var fs = Math.min(w / 0.9, h / 0.95);
+    boardEl.style.setProperty('--fs', fs + 'px');
+    boardEl.style.setProperty('--sx', 1);
+  }
+
+  function fmt(ms) { var s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
+  function tickTime() {
+    var ms = won ? finalMs : (t0 ? Date.now() - t0 : 0);
+    $('time').textContent = fmt(ms);
+  }
+
+  function render(popSet) {
+    for (var i = 0; i < N; i++) {
+      var el = cells[i], v = grid[i];
+      el.firstChild.textContent = v; el.classList.toggle('on', v === 1);
+      el.classList.toggle('hint', i === hintIdx);
+      el.setAttribute('aria-label', 'Row ' + (Math.floor(i / C) + 1) + ', column ' + (i % C + 1) + ', value ' + v + (i === hintIdx ? ', hint: tap this one' : ''));
+      if (popSet && popSet.indexOf(i) >= 0) {
+        el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
+      }
+    }
+    var left = Math.max(0, budget - history.length), lost = isLost();
+    $('level').textContent = level;
+    $('left').textContent = left;
+    $('ones').textContent = count(grid);
+    $('stars').textContent = totalStars;
+    var low = left <= 2 && !won;
+    $('tapstat').classList.toggle('low', low);
+    $('budget').classList.toggle('low', low);
+    $('budgetfill').style.width = (budget ? (left / budget) * 100 : 0) + '%';
+    boardEl.classList.toggle('lost', lost);
+    $('undo').disabled = history.length === 0;
+    $('hint').disabled = won || lost;
+    $('next').textContent = won ? 'Next level' : 'New grid';
+    tickTime();
+    persist();
+  }
+
+  function setMsg(html, cls) { var m = $('msg'); m.innerHTML = html; m.className = 'msg' + (cls ? ' ' + cls : ''); }
+
+  function save() { try { localStorage.setItem('inkbits-v2', JSON.stringify({ stars: totalStars, sound: soundOn, name: name, best: bestLevel })); } catch (e) {} }
+  function load() { try { var d = JSON.parse(localStorage.getItem('inkbits-v2') || '{}'); totalStars = d.stars || 0; soundOn = d.sound !== false; name = cleanName(d.name); bestLevel = d.best || 0; } catch (e) {} }
+
+  /* ---- Name + world ranking ---- */
+  function cleanName(s) { return String(s || '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 14); }
+  function myScore() { return bestLevel * 1000 + totalStars; }
+  function myRow() { for (var i = 0; i < rows.length; i++) if (uid && rows[i].id === uid) return { i: i, r: rows[i] }; return null; }
+
+  function updateBar() {
+    $('pname').textContent = name || 'Set name';
+    var m = myRow();
+    $('prank').textContent = m ? '#' + (m.i + 1) : '–';
+  }
+
+  function renderRank() {
+    var ol = $('ranklist'); ol.textContent = '';
+    var mine = myRow(), list = rows.slice();
+    if (!mine && name) list.push({ id: '__me', name: name, best: bestLevel, stars: totalStars, local: true });
+    list.forEach(function (r, i) {
+      var li = document.createElement('li');
+      var isMe = r.local || (uid && r.id === uid);
+      if (isMe) li.className = 'me';
+      var n = document.createElement('span'); n.className = 'n';
+      n.textContent = r.local ? (rows.length ? '–' : '1') : (i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : String(i + 1));
+      var nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = (r.name || 'Player') + (isMe ? ' (you)' : '');
+      var lv = document.createElement('span'); lv.className = 'lv'; lv.textContent = 'Lv ' + (r.best || 0);
+      var st = document.createElement('span'); st.className = 'st'; st.textContent = '★ ' + (r.stars || 0);
+      li.appendChild(n); li.appendChild(nm); li.appendChild(lv); li.appendChild(st);
+      ol.appendChild(li);
+    });
+    var msg = '';
+    if (rankState === 'loading') msg = 'Loading rankings…';
+    else if (rankState === 'slow') msg = 'Can’t reach the rankings yet. Showing what’s loaded so far.';
+    else if (rankState === 'readonly') msg = 'You can view the board, but scores from this view aren’t saved to it.';
+    else if (nameTaken) msg = 'That name is already taken by another player. Tap your name to pick a different one.';
+    else if (rankState === 'local') msg = 'Shared rankings aren’t available here, so this shows only your own best.';
+    else if (!list.length) msg = 'No scores yet. Clear a level to get on the board.';
+    $('rankmsg').textContent = msg;
+  }
+  function refreshRank() { updateBar(); if (!$('rank').hidden) renderRank(); }
+
+  /* World ranking backend: Supabase Edge Function "inkbits" (table public.inkbits_scores). */
+  var API = 'https://seicvoktkezadcqgfvik.supabase.co/functions/v1/inkbits';
+  var token = null, pollTimer = null, nameTaken = false;
+  function lc(n) { return String(n || '').toLowerCase(); }
+  function loadToken() {
+    try { token = localStorage.getItem('inkbits-token'); } catch (e) {}
+    if (!token || token.length < 16) {
+      var a = new Uint8Array(24); (window.crypto || {}).getRandomValues ? crypto.getRandomValues(a) : a.forEach(function (_, i) { a[i] = Math.random() * 256; });
+      token = Array.prototype.map.call(a, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+      try { localStorage.setItem('inkbits-token', token); } catch (e) {}
+    }
+  }
+  function call(method, body) {
+    var ctl = window.AbortController ? new AbortController() : null;
+    var to = setTimeout(function () { ctl && ctl.abort(); }, 8000);
+    return fetch(API, { method: method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined, signal: ctl && ctl.signal })
+      .then(function (r) { clearTimeout(to); return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); },
+            function (e) { clearTimeout(to); throw e; });
+  }
+
+  var pushing = false, pendingPush = false;
+  async function pushScore() {
+    if (!name || rankState === 'local') return;
+    if (pushing) { pendingPush = true; return; }
+    pushing = true;
+    try {
+      await call('POST', { name: name, token: token, best: bestLevel, stars: totalStars });
+      nameTaken = false;
+      await fetchRanks();
+    } catch (e) {
+      if (String(e.message) === 'name_taken') { nameTaken = true; refreshRank(); }
+    }
+    pushing = false;
+    if (pendingPush) { pendingPush = false; pushScore(); }
+  }
+
+  async function fetchRanks() {
+    try { rows = (await call('GET')).ranks; rankState = 'live'; }
+    catch (e) { rankState = rows.length ? 'slow' : 'local'; }
+    refreshRank();
+  }
+
+  function initRank() {
+    loadToken(); uid = lc(name);
+    fetchRanks().then(function () { if (rankState === 'live' && name) pushScore(); });
+    pollTimer = setInterval(fetchRanks, 20000);
+  }
+
+  function openName() { $('nameinput').value = name; $('namebox').hidden = false; $('nameinput').focus(); }
+  function closeName() { $('namebox').hidden = true; }
+  function setName(n) {
+    name = cleanName(n) || ('Guest' + (100 + Math.floor(Math.random() * 900)));
+    save(); uid = lc(name); updateBar(); closeName(); pushScore(); if (!$('rank').hidden) renderRank();
+  }
+  function openRank() { renderRank(); $('rank').hidden = false; $('rankclose').focus(); }
+  function closeRank() { $('rank').hidden = true; }
+
+  function celebrate() {
+    cells.forEach(function (el, i) {
+      el.style.setProperty('--d', ((Math.floor(i / C) + (i % C)) * 45) + 'ms');
+      el.classList.remove('wave'); void el.offsetWidth; el.classList.add('wave');
+    });
+    [523, 659, 784, 1047].forEach(function (f, k) { beep(f, 0.18, 'triangle', k * 0.09); });
+    buzz([30, 40, 30]);
+  }
+
+  function tap(i, user) {
+    if (user && (won || isLost())) return;
+    if (user && !t0) t0 = Date.now();
+    var set = neighbors(i);
+    set.forEach(function (k) { grid[k] ^= 1; });
+    if (user) history.push(i);
+    hintIdx = -1;
+    var ones = count(grid);
+    if (user) {
+      beep(280 + (N - ones) * 14, 0.07, 'triangle'); buzz(8);
+      if (ones === 0) {
+        won = true; finalMs = Date.now() - t0;
+        var n = history.length, st = n <= par ? 3 : (n <= par + 2 ? 2 : 1);
+        totalStars += st; bestLevel = Math.max(bestLevel, level); save(); updateBar(); pushScore();
+        var s = '<span class="stars" aria-hidden="true">' + '★'.repeat(st) + '☆'.repeat(3 - st) + '</span><span class="sr">' + st + ' of 3 stars. </span>';
+        setMsg(s + ' Level ' + level + ' cleared in ' + n + ' taps (minimum ' + par + ') and ' + fmt(finalMs) + '.', 'win');
+        render(set); celebrate(); return;
+      }
+      if (isLost()) {
+        setMsg('Out of taps. Undo a few or restart this grid.', 'lose');
+        beep(150, 0.35, 'sawtooth'); buzz(120);
+      } else {
+        setMsg(ones + ' ones left. ' + (budget - history.length) + ' taps to go.');
+      }
+    }
+    render(set);
+  }
+
+  function loadGrid(g) {
+    grid = g.slice(); start = g.slice(); history = []; hintIdx = -1; won = false;
+    t0 = null; finalMs = 0;
+    par = count(solve(grid) || []);
+    budget = par + slack();
+    setMsg('You have ' + budget + ' taps. Clear all ' + N + ' digits to 0.');
+    render();
+  }
+
+  $('undo').addEventListener('click', function () {
+    if (!history.length || won) return;
+    var i = history.pop();
+    tap(i, false);
+    var ones = count(grid);
+    setMsg(history.length ? ones + ' ones left. ' + (budget - history.length) + ' taps to go.' : 'Back to the start.');
+    render();
+  });
+  $('hint').addEventListener('click', function () {
+    if (won || isLost() || count(grid) === 0) return;
+    var x = solve(grid);
+    if (!x) { setMsg('No solution from here. Restart the grid.', 'lose'); return; }
+    var picks = []; x.forEach(function (v, i) { if (v) picks.push(i); });
+    hintIdx = picks[0];
+    render(); setFocus(hintIdx, true);
+    setMsg('Tap the dashed digit. ' + picks.length + ' tap' + (picks.length === 1 ? '' : 's') + ' left at minimum.');
+  });
+  $('reset').addEventListener('click', function () { loadGrid(start); setMsg('Restarted. ' + budget + ' taps.'); });
+  $('sound').addEventListener('click', function () {
+    soundOn = !soundOn; $('sound').textContent = soundOn ? 'Sound on' : 'Sound off'; save();
+    if (soundOn) beep(440, 0.08);
+  });
+  $('next').addEventListener('click', function () {
+    if (won) level += 1;
+    loadGrid(makeGrid(level));
+  });
+
+  function persist() {
+    try {
+      var snap = won ? { level: level + 1 } : { grid: grid, start: start, history: history, level: level };
+      localStorage.setItem('inkbits-save', JSON.stringify(snap));
+    } catch (e) {}
+    try {
+      window.claude && window.claude.hot && window.claude.hot.snapshot && window.claude.hot.snapshot(function () {
+        return { grid: grid, start: start, history: history, level: level };
+      });
+    } catch (e) {}
+  }
+
+  function readSave() {
+    try {
+      var d = JSON.parse(localStorage.getItem('inkbits-save') || 'null');
+      if (!d || !d.level) return null;
+      if (d.grid && (d.grid.length !== N || !d.start || d.start.length !== N || !d.history)) return { level: d.level };
+      return d;
+    } catch (e) { return null; }
+  }
+
+  function begin(data) {
+    if (!(data && data.grid)) data = readSave() || data;
+    build(); load();
+    function openTut() { $('tut').hidden = false; $('tutclose').focus(); }
+    function closeTut() {
+      $('tut').hidden = true;
+      try { localStorage.setItem('inkbits-seen', '1'); } catch (e) {}
+      if (!name) openName();
+    }
+    $('tutclose').addEventListener('click', closeTut);
+    $('howto').addEventListener('click', openTut);
+    $('namebtn').addEventListener('click', openName);
+    $('namesave').addEventListener('click', function () { setName($('nameinput').value); });
+    $('nameskip').addEventListener('click', function () { setName(name || ''); });
+    $('nameinput').addEventListener('keydown', function (e) { if (e.key === 'Enter') setName($('nameinput').value); });
+    $('rankbtn').addEventListener('click', openRank);
+    $('rankclose').addEventListener('click', closeRank);
+    $('rankname').addEventListener('click', function () { closeRank(); openName(); });
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return;
+      if (!$('namebox').hidden) closeName();
+      else if (!$('rank').hidden) closeRank();
+      else if (!$('tut').hidden) closeTut();
+    });
+    var seen = false;
+    try { seen = localStorage.getItem('inkbits-seen') === '1'; } catch (e) {}
+    if (!seen) openTut(); else if (!name) openName();
+    updateBar();
+    $('sound').textContent = soundOn ? 'Sound on' : 'Sound off';
+    if (data && data.grid && data.start && data.history) {
+      level = data.level || 1; grid = data.grid; start = data.start; history = data.history;
+      par = count(solve(start) || []); budget = par + slack(); hintIdx = -1; won = false;
+      if (history.length) t0 = Date.now();
+      setMsg(count(grid) + ' ones left. ' + Math.max(0, budget - history.length) + ' taps to go.');
+      render();
+    } else {
+      level = (data && data.level) || 1; loadGrid(makeGrid(level));
+    }
+    bestLevel = Math.max(bestLevel, level - 1);
+    initRank();
+    setInterval(tickTime, 500);
+    fitDigits();
+    window.addEventListener('resize', fitDigits);
+    if (window.ResizeObserver) new ResizeObserver(fitDigits).observe(boardEl);
+  }
+  var hot = window.claude && window.claude.hot;
+  if (hot && hot.ready) hot.ready(begin); else begin(hot && hot.data);
+})();
+</script>
+
+<script>
+/* Dialog focus management: background goes inert while a dialog is open; focus returns to the opener. */
+(function () {
+  var dlgs = ['tut', 'namebox', 'rank'].map(function (id) { return document.getElementById(id); });
+  var last = null;
+  function anyOpen() { return dlgs.some(function (d) { return !d.hidden; }); }
+  document.addEventListener('click', function (e) { if (!anyOpen()) { var b = e.target.closest && e.target.closest('button'); if (b) last = b; } }, true);
+  document.addEventListener('focusin', function (e) { if (!anyOpen() && e.target.closest && e.target.closest('button')) last = e.target; });
+  var was = false;
+  new MutationObserver(function () {
+    var open = anyOpen();
+    Array.prototype.forEach.call(document.querySelectorAll('main > *'), function (el) {
+      if (el.classList.contains('tut')) return;
+      if (open) el.setAttribute('inert', ''); else el.removeAttribute('inert');
+    });
+    if (was && !open) { var t = (last && last.isConnected && !last.disabled) ? last : document.getElementById('c0'); if (t) t.focus({ preventScroll: true }); }
+    was = open;
+  }).observe(document.querySelector('main'), { attributes: true, attributeFilter: ['hidden'], subtree: true });
+})();
+
+/* PWA: service worker + install button. */
+(function () {
+  var btn = document.getElementById('installbtn'), deferred = null;
+  var standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone;
+  var ios = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+  }
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferred = e; if (!standalone) btn.hidden = false; });
+  window.addEventListener('appinstalled', function () { btn.hidden = true; deferred = null; });
+  if (ios && !standalone) btn.hidden = false;
+  btn.addEventListener('click', function () {
+    if (deferred) { deferred.prompt(); deferred.userChoice.then(function () { deferred = null; btn.hidden = true; }); }
+    else document.getElementById('msg').textContent = 'To install on iPhone or iPad: tap the Share button, then “Add to Home Screen”.';
+  });
+})();
+</script>
+
+</body></html>
